@@ -132,7 +132,7 @@ result_t YDLidar::getDeviceInfo(device_info & info, uint32_t timeout) {
 		while ((remainingtime=millis() - currentTs) <= timeout) {
             int currentbyte = _bined_serialdev->read();
             if (currentbyte<0) continue;    
-            infobuf[recvPos++] = currentbyte;
+             infobuf[recvPos++] = currentbyte;
 
             if (recvPos == sizeof(device_info)) {
                 return RESULT_OK;
@@ -147,7 +147,7 @@ result_t YDLidar::getDeviceInfo(device_info & info, uint32_t timeout) {
 result_t YDLidar::stop(void)
 {
     if (!isOpen()) return RESULT_FAIL;
-    result_t ans = sendCommand(LIDAR_CMD_FORCE_STOP,NULL,0);
+    result_t ans = sendCommand(LIDAR_CMD_FORCE_STOP,NULL,0);    
     return ans;
 }
 
@@ -181,21 +181,107 @@ result_t YDLidar::startScan(bool force, uint32_t timeout ) {
     return RESULT_OK;
 }
 
+/** pre computated table with excel to unload the CPU,
+computation done in les than 25 instruction
+the accuracy is 1 degre
+*/
+int32_t compute_AngCorrect(int32_t dist)
+{
+  if((dist<19))
+  {
+      if (dist<1) return 87;
+      if (dist<2) return 85;
+      if (dist<3) return 82;
+      if (dist<4) return 79;
+      if (dist<5) return 77;
+      if (dist<6) return 74;
+      if (dist<7) return 71;
+      if (dist<8) return 69;
+      if (dist<9) return 66;
+      if (dist<10) return 64;
+      if (dist<11) return 61;
+      if (dist<12) return 59;
+      if (dist<13) return 57;
+      if (dist<14) return 55;
+      if (dist<15) return 53;
+      if (dist<16) return 51;
+      if (dist<17) return 49;
+      if (dist<18) return 47;
+      if (dist<19) return 45;
+  }
+    if((dist<43))
+  {
+    if (dist<20) return 44;
+    if (dist<21) return 42;
+    if (dist<22) return 40;
+    if (dist<23) return 39;
+    if (dist<24) return 38;
+    if (dist<25) return 36;
+    if (dist<26) return 35;
+    if (dist<27) return 34;
+    if (dist<28) return 33;
+    if (dist<29) return 31;
+    if (dist<30) return 30;
+    if (dist<31) return 29;
+    if (dist<32) return 28;
+    if (dist<33) return 27;
+    if (dist<35) return 26;
+    if (dist<36) return 25;
+    if (dist<37) return 24;
+    if (dist<38) return 23;
+    if (dist<40) return 22;
+    if (dist<41) return 21;
+    if (dist<43) return 20;
+  }
+      if((dist<93))
+  {
+    if (dist<45) return 19;
+    if (dist<46) return 18;
+    if (dist<48) return 17;
+    if (dist<50) return 16;
+    if (dist<53) return 15;
+    if (dist<55) return 14;
+    if (dist<58) return 13;
+    if (dist<61) return 12;
+    if (dist<64) return 11;
+    if (dist<67) return 10;
+    if (dist<71) return 9;
+    if (dist<76) return 8;
+    if (dist<81) return 7;
+    if (dist<86) return 6;
+    if (dist<93) return 5;
+      }
+if (dist<100) return 4;
+if (dist<109) return 3;
+if (dist<119) return 2;
+if (dist<131) return 1;
+if (dist<147) return 0;
+if (dist<166) return -1;
+if (dist<191) return -2;
+if (dist<226) return -3;
+if (dist<276) return -4;
+if (dist<354) return -5;
+if (dist<495) return -6;
+if (dist<825) return -7;
+if (dist<2500) return -8;
+
+}
+
 // wait scan data
 result_t YDLidar::waitScanDot( uint32_t timeout) {
-	int recvPos = 0;
+	int recvPos = 0; 
 	uint32_t startTs = millis();
 	uint32_t waitTime;
 	uint8_t nowPackageNum;
 	node_info node;
 	static node_package package;
-	static uint16_t package_Sample_Index = 0;
 	static float IntervalSampleAngle = 0;
 	static float IntervalSampleAngle_LastPackage = 0;
 	static uint16_t FirstSampleAngle = 0;
 	static uint16_t LastSampleAngle = 0;
 	static uint16_t CheckSum = 0;
 
+	
 	static uint16_t CheckSumCal = 0;
 	static uint16_t SampleNumlAndCTCal = 0;
 	static uint16_t LastSampleAngleCal = 0;
@@ -345,9 +431,20 @@ result_t YDLidar::waitScanDot( uint32_t timeout) {
 
 	if(CheckSumResult == true){
 		node.distance_q2 = package.packageSampleDistance[package_Sample_Index];
-				  
+				
+        int32_t tmp=node.distance_q2;
+        tmp=tmp>>2;
 		if(node.distance_q2/4 != 0){
+        int32_t t=node.distance_q2;
+/*
+        t=t>>2;// *0.25
+        AngleCorrectForDistance = (int32_t)((atan(  ( (float)( ((int32_t)(21.8*155.3) - 22*t) )/(float)(155*t)))  ) *3667);
+        
+        
 			AngleCorrectForDistance = (int32_t)((atan(((21.8*(155.3 - (node.distance_q2*0.25f)) )/155.3)/(node.distance_q2*0.25f)))*3666.93);
+        */
+                       AngleCorrectForDistance= compute_AngCorrect(tmp);
+        
 		}else{
 			AngleCorrectForDistance = 0;		
 		}
@@ -368,10 +465,15 @@ result_t YDLidar::waitScanDot( uint32_t timeout) {
 		package_Sample_Index = 0;
 		return RESULT_FAIL;
 	}
-
+/*
     point.distance = node.distance_q2*0.25f;
     point.angle = (node.angle_q6_checkbit >> LIDAR_RESP_MEASUREMENT_ANGLE_SHIFT)/64.0f;
-    point.quality = (node.sync_quality>>LIDAR_RESP_MEASUREMENT_QUALITY_SHIFT);
+    */
+    
+    point.distance = node.distance_q2>>2;
+    point.angle = (node.angle_q6_checkbit >> LIDAR_RESP_MEASUREMENT_ANGLE_SHIFT)>>6;// div 64
+    
+    point.quality = (node.sync_quality>>LIDAR_RESP_MEASUREMENT_QUALITY_SHIFT);    
     point.startBit = (node.sync_quality & LIDAR_RESP_MEASUREMENT_SYNCBIT);
 
 	package_Sample_Index++;
@@ -383,7 +485,12 @@ result_t YDLidar::waitScanDot( uint32_t timeout) {
 	return RESULT_OK;
 }
 
-
+ bool YDLidar::isScanPointReady(void)
+                {
+                  if (_bined_serialdev->available()>20)
+                     return true;
+        return package_Sample_Index != 0;
+    }
 //send data to serial
 result_t YDLidar::sendCommand(uint8_t cmd, const void * payload, size_t payloadsize) {
 	cmd_packet pkt_header;
@@ -435,8 +542,9 @@ result_t YDLidar::waitResponseHeader(lidar_ans_header * header, uint32_t timeout
                 		continue;
             		}
             		break;
-        	}
-        	headerBuffer[recvPos++] = currentbyte;
+        	}  
+            //    tab[recvPos]=(uint8_t )currentbyte;
+        	headerBuffer[recvPos++] = (uint8_t )currentbyte;
 
         	if (recvPos == sizeof(lidar_ans_header)) {
             		return RESULT_OK;
